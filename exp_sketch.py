@@ -108,23 +108,15 @@ void cs_hash_update_retrieve(const long* indices,
 '''
 
 class CountSketch:
-    def __init__(self, N, D, sketch_size=0.2):
+    def __init__(self, N, D, sketch_size=0.20):
         self.N = N
         self.D = D
         self.blk_size = math.ceil(D // 32) * 32
         self.range = int(N*sketch_size/3.)
         self.width = self.range * D
         self.kernel = cupyKernel(kernel, "cs_hash_update_retrieve")
-        self.cms = torch.zeros(3, self.range, D).float().cuda()
-        print(N, "Count Sketch", self.cms.size())
-
-    def schedule(self, rate=425000, maximum=0.990):
-        value = 1. + math.log(math.floor(self.t/rate)+1, 2)
-        current = 1. - pow(2.0, -value)
-        self.t += 1
-        if self.t % rate == 0:
-            print("Momentum:", current)
-        return min(current, maximum)
+        self.sketch = torch.zeros(3, self.range, D).float().cuda()
+        print(N, "Count Sketch", self.sketch.size())
 
     def update(self, indices, values, size, beta):
         M, D = values.size()
@@ -135,7 +127,7 @@ class CountSketch:
                 args=[indices.data_ptr(),
                     values.data_ptr(),
                     beta.data_ptr(),
-                    self.cms.data_ptr(),
+                    self.sketch.data_ptr(),
                     result.data_ptr(),
                     self.range,
                     self.width,

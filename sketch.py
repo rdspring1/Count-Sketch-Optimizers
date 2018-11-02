@@ -59,9 +59,9 @@ float cms(float* mem,
 	const float sign = (sign_bit) ? 1.0 : -1.0;
 
 	float old_value = sign * mem[hash_idx];
-	float new_value = beta * old_value + value;
-	mem[hash_idx] = sign * new_value;
-	return new_value;
+	float update = (beta - 1.0f) * old_value + value;
+	atomicAdd(&mem[hash_idx], sign * update);
+    return old_value + update;
 }
 
 extern "C"
@@ -108,15 +108,15 @@ void hash_update_retrieve(const long* indices,
 
 
 class CountSketch:
-    def __init__(self, N, D, sketch_size=0.2):
+    def __init__(self, N, D, sketch_size=0.20):
         self.N = N
         self.D = D
         self.blk_size = math.ceil(D // 32) * 32
         self.range = int(N*sketch_size/3.)
         self.width = self.range * D
         self.kernel = cupyKernel(kernel, "hash_update_retrieve")
-        self.cms = torch.zeros(3, self.range, D).float().cuda()
-        print(N, "Count Sketch", self.cms.size())
+        self.sketch = torch.zeros(3, self.range, D).float().cuda()
+        print(N, "Count Sketch", self.sketch.size())
 
     def schedule(self, rate=425000, maximum=0.990):
         value = 1. + math.log(math.floor(self.t/rate)+1, 2)
@@ -135,7 +135,7 @@ class CountSketch:
                 args=[indices.data_ptr(),
                     values.data_ptr(),
                     beta.data_ptr(),
-                    self.cms.data_ptr(),
+                    self.sketch.data_ptr(),
                     result.data_ptr(),
                     self.range,
                     self.width,

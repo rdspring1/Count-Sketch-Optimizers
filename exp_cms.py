@@ -116,3 +116,6 @@ class CountMinSketch:
                      self.D],
                 strm=torch.cuda.current_stream().cuda_stream)
         return torch.cuda.sparse.FloatTensor(indices, result, size)
+
+    def clean(self, alpha):
+        self.cms.mul_(alpha)

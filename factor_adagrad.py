@@ -1,6 +1,19 @@
 import torch
 from torch.optim import Optimizer
-from cms import CountMinSketch
+
+class LowRank:
+    def __init__(self, N, D):
+        self.N = N
+        self.D = D
+        self.v_r = torch.zeros(N,1).float().cuda()
+        self.v_c = torch.zeros(1,D).float().cuda()
+        self.step_num = 0
+        print("Factorized Adagrad Low Rank", N, D)
+
+    def update(self, value):
+        self.v_r = self.v_r + torch.mean(value, dim=1, keepdim=True)
+        self.v_c = self.v_c + torch.mean(value, dim=0, keepdim=True)
+        return torch.matmul(self.v_r, self.v_c) / torch.mean(self.v_r)
 
 class Adagrad(Optimizer):
     """Implements Adagrad algorithm.
@@ -56,7 +69,7 @@ class Adagrad(Optimizer):
                     state['step'] = 0
                     if grad.is_sparse:
                         N, D = grad.data.size()
-                        state['sum'] = CountMinSketch(N, D)
+                        state['sum'] = LowRank(N, D)
                     else:
                         state['sum'] = torch.full_like(grad.data, group['initial_accumulator_value'])
 
@@ -80,7 +93,8 @@ class Adagrad(Optimizer):
                             return constructor().resize_as_(grad)
                         return constructor(grad_indices, values, size)
 
-                    std = state['sum'].update(grad_indices, grad_values.pow(2), size)
+                    grad_dense = grad.to_dense()
+                    std = state['sum'].update(grad_dense.pow(2))._sparse_mask(grad)
                     std_values = std._values().sqrt_().add_(1e-10)
                     update = grad_values / std_values
                     p.data.add_(make_sparse(-clr * update))

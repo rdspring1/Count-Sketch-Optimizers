@@ -2,6 +2,8 @@ import math
 import torch
 from torch.optim import Optimizer
 
+from exp_cms import CountMinSketch
+from exp_sketch import CountSketch 
 
 class Adam(Optimizer):
     """Implements Adam algorithm.
@@ -39,6 +41,9 @@ class Adam(Optimizer):
         defaults = dict(lr=lr, betas=betas, eps=eps,
                         weight_decay=weight_decay, amsgrad=amsgrad)
         super(Adam, self).__init__(params, defaults)
+        self.exp_avg_error = 0
+        self.exp_avg_sq_error = 0
+        self.count = 1
 
     def __setstate__(self, state):
         super(Adam, self).__setstate__(state)
@@ -51,14 +56,14 @@ class Adam(Optimizer):
 
         # State initialization
         if len(state) == 0:
-           state['step'] = 0
-           # Exponential moving average of gradient values
-           state['exp_avg'] = torch.zeros_like(p.data)
-           # Exponential moving average of squared gradient values
-           state['exp_avg_sq'] = torch.zeros_like(p.data)
-           if amsgrad:
-               # Maintains max of all exp. moving avg. of sq. grad. values
-               state['max_exp_avg_sq'] = torch.zeros_like(p.data)
+            state['step'] = 0
+            # Exponential moving average of gradient values
+            state['exp_avg'] = torch.zeros_like(p.data)
+            # Exponential moving average of squared gradient values
+            state['exp_avg_sq'] = torch.zeros_like(p.data)
+            if amsgrad:
+                # Maintains max of all exp. moving avg. of sq. grad. values
+                state['max_exp_avg_sq'] = torch.zeros_like(p.data)
 
         exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
         beta1, beta2 = group['betas']
@@ -66,7 +71,6 @@ class Adam(Optimizer):
            max_exp_avg_sq = state['max_exp_avg_sq']
 
         state['step'] += 1
-
         if group['weight_decay'] != 0:
            grad = grad.add(group['weight_decay'], p.data)
 
@@ -92,13 +96,19 @@ class Adam(Optimizer):
 
         # State initialization
         if len(state) == 0:
+            N, D = grad.data.size()
             state['step'] = 0
             # Exponential moving average of gradient values
-            state['exp_avg'] = torch.zeros_like(p.data)
+            state['exp_avg'] = CountSketch(N, D)
+            state['exp_avg_base'] = torch.zeros_like(p.data)
             # Exponential moving average of squared gradient values
-            state['exp_avg_sq'] = torch.zeros_like(p.data)
+            state['exp_avg_sq'] = CountMinSketch(N, D)
+            # Exponential moving average of squared gradient values
+            state['exp_avg_sq_base'] = torch.zeros_like(p.data)
 
         state['step'] += 1
+        if group['weight_decay'] != 0:
+           grad = grad.add(group['weight_decay'], p.data)
 
         grad = grad.coalesce()  # the update is non-linear so indices must be unique
         grad_indices = grad._indices()
@@ -114,27 +124,60 @@ class Adam(Optimizer):
         exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
         beta1, beta2 = group['betas']
 
+        if state['step'] % 1000 == 0:
+           #print("Cleaning")
+           exp_avg_sq.clean(0.25)
+
         # Decay the first and second moment running average coefficient
         #      old <- b * old + (1 - b) * new  <==> old += (1 - b) * (new - old)
-        old_exp_avg_values = exp_avg._sparse_mask(grad)._values()
-        exp_avg_update_values = grad_values.sub(old_exp_avg_values).mul_(1 - beta1)
-        exp_avg.add_(make_sparse(exp_avg_update_values))
 
-        old_exp_avg_sq_values = exp_avg_sq._sparse_mask(grad)._values()
-        exp_avg_sq_update_values = grad_values.pow(2).sub_(old_exp_avg_sq_values).mul_(1 - beta2)
-        exp_avg_sq.add_(make_sparse(exp_avg_sq_update_values))
+        # Update Tensors for Gradient Update
+        #old_exp_avg_values = exp_avg._sparse_mask(grad)._values()
+        #exp_avg_update_values = grad_values.sub(old_exp_avg_values).mul_(1 - beta1)
+        #exp_avg.add_(make_sparse(exp_avg_update_values))
+        #numer = exp_avg_update_values.add_(old_exp_avg_values)
+        #del exp_avg_update_values
 
-        # Dense addition again is intended, avoiding another _sparse_mask
-        numer = exp_avg_update_values.add_(old_exp_avg_values)
-        exp_avg_sq_update_values.add_(old_exp_avg_sq_values)
-        denom = exp_avg_sq_update_values.sqrt_().add_(group['eps'])
-        del exp_avg_update_values, exp_avg_sq_update_values
+        #old_exp_avg_sq_values = exp_avg_sq._sparse_mask(grad)._values()
+        #exp_avg_sq_update_values = grad_values.pow(2).sub_(old_exp_avg_sq_values).mul_(1 - beta2)
+        #exp_avg_sq.add_(make_sparse(exp_avg_sq_update_values))
+        #exp_avg_sq_update_values.add_(old_exp_avg_sq_values)
+        #denom = exp_avg_sq_update_values.sqrt_().add_(group['eps'])
+        #del exp_avg_sq_update_values
+
+        numer = exp_avg.update(grad_indices, grad_values, size, beta1)._values()
+        exp_avg_sq_update = exp_avg_sq.update(grad_indices, grad_values.pow(2), size, beta2)._values()
+        denom = exp_avg_sq_update.sqrt_().add_(group['eps'])
+        update = numer / denom
+
+        # Update Baseline Tensors for Error Comparison
+        exp_avg_base = state['exp_avg_base']
+        old_exp_avg_values_base = exp_avg_base._sparse_mask(grad)._values()
+        exp_avg_update_values_base = grad_values.sub(old_exp_avg_values_base).mul_(1 - beta1)
+        exp_avg_base.add_(make_sparse(exp_avg_update_values_base))
+        exp_avg_values_base = exp_avg_update_values_base.add_(old_exp_avg_values_base)
+
+        exp_avg_sq_base = state['exp_avg_sq_base']
+        old_exp_avg_sq_values_base = exp_avg_sq_base._sparse_mask(grad)._values()
+        exp_avg_sq_update_values_base = grad_values.pow(2).sub_(old_exp_avg_sq_values_base).mul_(1 - beta2)
+        exp_avg_sq_base.add_(make_sparse(exp_avg_sq_update_values_base))
+        exp_avg_sq_values_base = exp_avg_sq_base._sparse_mask(grad)._values()
+
+        if self.count % 125 == 0:
+            print(self.exp_avg_error/self.count)
+            print(self.exp_avg_sq_error/self.count)
+            self.exp_avg_error = 0
+            self.exp_avg_sq_error = 0
+            self.count = 1
+        self.exp_avg_error += torch.sum(torch.abs(numer - exp_avg_values_base)).item()
+        self.exp_avg_sq_error += torch.sum(torch.abs(denom - exp_avg_sq_values_base)).item()
+        self.count += 1
 
         bias_correction1 = 1 - beta1 ** state['step']
         bias_correction2 = 1 - beta2 ** state['step']
         step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
 
-        p.data.add_(make_sparse(-step_size * numer.div_(denom)))
+        p.data.add_(make_sparse(-step_size * update))
 
     def step(self, closure=None):
         """Performs a single optimization step.

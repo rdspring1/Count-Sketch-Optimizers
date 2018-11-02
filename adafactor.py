@@ -10,18 +10,18 @@ class LowRank:
         self.v_r = torch.zeros(N,1).float().cuda()
         self.v_c = torch.zeros(1,D).float().cuda()
         self.step_num = 0
-        print("Adafactor Low-Rank", N, D)
+        print("AdaFactor Low-Rank", N, D)
 
     def decay_rate(self):
         decay_rate = 1. - pow((self.step_num + 1.), -0.8)
         self.step_num += 1
         return decay_rate
 
-    def update(self, gradient, decay_rate=None):
+    def update(self, value, decay_rate=None):
         if decay_rate is None:
             decay_rate = self.decay_rate()
-        self.v_r = decay_rate * self.v_r + (1. - decay_rate) * torch.mean(gradient, dim=1, keepdim=True)
-        self.v_c = decay_rate * self.v_c + (1. - decay_rate) * torch.mean(gradient, dim=0, keepdim=True)
+        self.v_r = decay_rate * self.v_r + (1. - decay_rate) * torch.mean(value, dim=1, keepdim=True)
+        self.v_c = decay_rate * self.v_c + (1. - decay_rate) * torch.mean(value, dim=0, keepdim=True)
         return torch.matmul(self.v_r, self.v_c) / torch.mean(self.v_r)
 
 class Adam(Optimizer):
@@ -60,6 +60,8 @@ class Adam(Optimizer):
         defaults = dict(lr=lr, betas=betas, eps=eps,
                         weight_decay=weight_decay, amsgrad=amsgrad)
         super(Adam, self).__init__(params, defaults)
+        #self.exp_avg_sq_error = 0
+        #self.count = 1
 
     def __setstate__(self, state):
         super(Adam, self).__setstate__(state)
@@ -115,9 +117,10 @@ class Adam(Optimizer):
             N, D = grad.data.size()
             state['step'] = 0
             # Exponential moving average of gradient values
-            state['exp_avg'] = LowRank(N, D)
+            state['exp_avg'] = torch.zeros_like(p.data)
             # Exponential moving average of squared gradient values
             state['exp_avg_sq'] = LowRank(N, D)
+            #state['exp_avg_sq_base'] = torch.zeros_like(p.data)
 
         state['step'] += 1
         if group['weight_decay'] != 0:
@@ -139,26 +142,45 @@ class Adam(Optimizer):
 
         # Decay the first and second moment running average coefficient
         #      old <- b * old + (1 - b) * new  <==> old += (1 - b) * (new - old)
+        old_exp_avg_values = exp_avg._sparse_mask(grad)._values()
+        exp_avg_update_values = grad_values.sub(old_exp_avg_values).mul_(1 - beta1)
+        exp_avg.add_(make_sparse(exp_avg_update_values))
+        numer = exp_avg_update_values.add_(old_exp_avg_values)
 
         grad_dense = grad.to_dense()
-        numer = exp_avg.update(grad_dense, beta1)
-        exp_avg_sq_update = exp_avg_sq.update(grad_dense.pow(2), beta2)
-        denom = exp_avg_sq_update.sqrt_().add_(group['eps'])
+        exp_avg_sq_update_values = exp_avg_sq.update(grad_dense.pow(2).add_(1e-30), beta2)._sparse_mask(grad)._values()
+        denom = exp_avg_sq_update_values.sqrt_().add_(group['eps'])
         update = numer / denom
+        del exp_avg_update_values, exp_avg_sq_update_values
+
+        '''
+        exp_avg_sq_base = state['exp_avg_sq_base']
+        old_exp_avg_sq_values_base = exp_avg_sq_base._sparse_mask(grad)._values()
+        exp_avg_sq_update_values_base = grad_values.pow(2).sub_(old_exp_avg_sq_values_base).mul_(1 - beta2)
+        exp_avg_sq_base.add_(make_sparse(exp_avg_sq_update_values_base))
+        exp_avg_sq_values_base = exp_avg_sq_base._sparse_mask(grad)
+        exp_avg_sq_approx = exp_avg_sq_update._sparse_mask(grad)
+
+        if (self.count+1) % 200 == 0:
+            print(self.exp_avg_sq_error/self.count)
+            self.exp_avg_sq_error = 0
+            self.count = 0
+        self.exp_avg_sq_error += torch.sum(torch.abs(exp_avg_sq_approx-exp_avg_sq_values_base))
+        self.count += 1
+        '''
 
         bias_correction1 = 1 - beta1 ** state['step']
         bias_correction2 = 1 - beta2 ** state['step']
         step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
 
         # Update Clipping
-        clipping_denom = max(Adam.root_mean_square(update), 1.0)
+        clipping_denom = max(1.0, Adam.root_mean_square(update))
         update /= clipping_denom
 
-        p.data.add_((-step_size * update)._sparse_mask(grad))
+        p.data.add_(make_sparse(-step_size * update))
 
     def root_mean_square(x):
         return torch.sqrt(torch.mean(x.pow(2))).item()
-
 
     def step(self, closure=None):
         """Performs a single optimization step.

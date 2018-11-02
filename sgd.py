@@ -3,7 +3,6 @@ import sys
 from torch.optim import Optimizer
 
 from sketch import CountSketch 
-from low_rank import LowRank
 
 class SGD(Optimizer):
     r"""Implements stochastic gradient descent (optionally with momentum).
@@ -97,14 +96,10 @@ class SGD(Optimizer):
                         N, D = p.data.size()
                         buf = param_state['momentum_buffer'] = CountSketch(N, D)
                         buf.update(d_p._indices(), d_p._values(), d_p.size(), momentum)
-                        #buf = param_state['momentum_buffer'] = LowRank(N, D)
-                        #buf.update(d_p.to_dense(), momentum)
                       else:
                         # update count-sketch
                         buf = param_state['momentum_buffer']
                         result = buf.update(d_p._indices(), d_p._values(), d_p.size(), momentum)
-                        #d_p = d_p.to_dense()
-                        #result = buf.update(d_p, momentum)
                         if nesterov:
                             d_p = d_p.add(momentum, result)
                         else:

@@ -118,6 +118,10 @@ class Adam(Optimizer):
         exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
         beta1, beta2 = group['betas']
 
+        if state['step'] % 1000 == 0:
+           #print("Cleaning")
+           exp_avg_sq.clean(0.25)
+
         # Decay the first and second moment running average coefficient
         #      old <- b * old + (1 - b) * new  <==> old += (1 - b) * (new - old)
         numer = exp_avg.update(grad_indices, grad_values, size, beta1)._values()
@@ -129,14 +133,7 @@ class Adam(Optimizer):
         bias_correction2 = 1 - beta2 ** state['step']
         step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
 
-        # Update Clipping
-        clipping_denom = max(Adam.root_mean_square(update), 1.0)
-        update /= clipping_denom
-
         p.data.add_(make_sparse(-step_size * update))
-
-    def root_mean_square(x):
-        return torch.sqrt(torch.mean(x.pow(2))).item()
 
     def step(self, closure=None):
         """Performs a single optimization step.
