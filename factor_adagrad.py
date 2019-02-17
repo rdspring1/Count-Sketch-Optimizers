@@ -94,7 +94,7 @@ class Adagrad(Optimizer):
                         return constructor(grad_indices, values, size)
 
                     grad_dense = grad.to_dense()
-                    std = state['sum'].update(grad_dense.pow(2))._sparse_mask(grad)
+                    std = state['sum'].update(grad_dense.pow(2)).sparse_mask(grad)
                     std_values = std._values().sqrt_().add_(1e-10)
                     update = grad_values / std_values
                     p.data.add_(make_sparse(-clr * update))

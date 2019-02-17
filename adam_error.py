@@ -132,13 +132,13 @@ class Adam(Optimizer):
         #      old <- b * old + (1 - b) * new  <==> old += (1 - b) * (new - old)
 
         # Update Tensors for Gradient Update
-        #old_exp_avg_values = exp_avg._sparse_mask(grad)._values()
+        #old_exp_avg_values = exp_avg.sparse_mask(grad)._values()
         #exp_avg_update_values = grad_values.sub(old_exp_avg_values).mul_(1 - beta1)
         #exp_avg.add_(make_sparse(exp_avg_update_values))
         #numer = exp_avg_update_values.add_(old_exp_avg_values)
         #del exp_avg_update_values
 
-        #old_exp_avg_sq_values = exp_avg_sq._sparse_mask(grad)._values()
+        #old_exp_avg_sq_values = exp_avg_sq.sparse_mask(grad)._values()
         #exp_avg_sq_update_values = grad_values.pow(2).sub_(old_exp_avg_sq_values).mul_(1 - beta2)
         #exp_avg_sq.add_(make_sparse(exp_avg_sq_update_values))
         #exp_avg_sq_update_values.add_(old_exp_avg_sq_values)
@@ -152,16 +152,16 @@ class Adam(Optimizer):
 
         # Update Baseline Tensors for Error Comparison
         exp_avg_base = state['exp_avg_base']
-        old_exp_avg_values_base = exp_avg_base._sparse_mask(grad)._values()
+        old_exp_avg_values_base = exp_avg_base.sparse_mask(grad)._values()
         exp_avg_update_values_base = grad_values.sub(old_exp_avg_values_base).mul_(1 - beta1)
         exp_avg_base.add_(make_sparse(exp_avg_update_values_base))
         exp_avg_values_base = exp_avg_update_values_base.add_(old_exp_avg_values_base)
 
         exp_avg_sq_base = state['exp_avg_sq_base']
-        old_exp_avg_sq_values_base = exp_avg_sq_base._sparse_mask(grad)._values()
+        old_exp_avg_sq_values_base = exp_avg_sq_base.sparse_mask(grad)._values()
         exp_avg_sq_update_values_base = grad_values.pow(2).sub_(old_exp_avg_sq_values_base).mul_(1 - beta2)
         exp_avg_sq_base.add_(make_sparse(exp_avg_sq_update_values_base))
-        exp_avg_sq_values_base = exp_avg_sq_base._sparse_mask(grad)._values()
+        exp_avg_sq_values_base = exp_avg_sq_base.sparse_mask(grad)._values()
 
         if self.count % 125 == 0:
             print(self.exp_avg_error/self.count)

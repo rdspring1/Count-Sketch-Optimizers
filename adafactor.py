@@ -142,24 +142,24 @@ class Adam(Optimizer):
 
         # Decay the first and second moment running average coefficient
         #      old <- b * old + (1 - b) * new  <==> old += (1 - b) * (new - old)
-        old_exp_avg_values = exp_avg._sparse_mask(grad)._values()
+        old_exp_avg_values = exp_avg.sparse_mask(grad)._values()
         exp_avg_update_values = grad_values.sub(old_exp_avg_values).mul_(1 - beta1)
         exp_avg.add_(make_sparse(exp_avg_update_values))
         numer = exp_avg_update_values.add_(old_exp_avg_values)
 
         grad_dense = grad.to_dense()
-        exp_avg_sq_update_values = exp_avg_sq.update(grad_dense.pow(2).add_(1e-30), beta2)._sparse_mask(grad)._values()
+        exp_avg_sq_update_values = exp_avg_sq.update(grad_dense.pow(2).add_(1e-30), beta2).sparse_mask(grad)._values()
         denom = exp_avg_sq_update_values.sqrt_().add_(group['eps'])
         update = numer / denom
         del exp_avg_update_values, exp_avg_sq_update_values
 
         '''
         exp_avg_sq_base = state['exp_avg_sq_base']
-        old_exp_avg_sq_values_base = exp_avg_sq_base._sparse_mask(grad)._values()
+        old_exp_avg_sq_values_base = exp_avg_sq_base.sparse_mask(grad)._values()
         exp_avg_sq_update_values_base = grad_values.pow(2).sub_(old_exp_avg_sq_values_base).mul_(1 - beta2)
         exp_avg_sq_base.add_(make_sparse(exp_avg_sq_update_values_base))
-        exp_avg_sq_values_base = exp_avg_sq_base._sparse_mask(grad)
-        exp_avg_sq_approx = exp_avg_sq_update._sparse_mask(grad)
+        exp_avg_sq_values_base = exp_avg_sq_base.sparse_mask(grad)
+        exp_avg_sq_approx = exp_avg_sq_update.sparse_mask(grad)
 
         if (self.count+1) % 200 == 0:
             print(self.exp_avg_sq_error/self.count)

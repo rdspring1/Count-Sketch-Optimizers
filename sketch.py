@@ -8,13 +8,13 @@ extern "C"
 __inline__ __device__
 int hash(int value, int range, int a, int b)
 {
-    int h = a * value + b;
-    h ^= h >> 16;
-    h *= 0x85ebca6b;
-    h ^= h >> 13;
-    h *= 0xc2b2ae35;
-    h ^= h >> 16;
-    return h % range;
+	int h = a * value + b;
+	h ^= h >> 16;
+	h *= 0x85ebca6b;
+	h ^= h >> 13;
+	h *= 0xc2b2ae35;
+	h ^= h >> 16;
+	return h % range;
 }
 
 extern "C"
@@ -61,7 +61,7 @@ float cms(float* mem,
 	float old_value = sign * mem[hash_idx];
 	float update = (beta - 1.0f) * old_value + value;
 	atomicAdd(&mem[hash_idx], sign * update);
-    return old_value + update;
+	return old_value + update;
 }
 
 extern "C"
@@ -96,12 +96,12 @@ void hash_update_retrieve(const long* indices,
 	const int W,
 	const int D)
 {
-    if(threadIdx.x < D)
-    {
+	if(threadIdx.x < D)
+	{
 		const int idx = blockIdx.x * D + threadIdx.x;
 		const float value = values[idx];
 		const long index = indices[blockIdx.x];
-    	result[idx] = cms_update_retrieve(mem, result, *beta, N, W, D, index, value);
+		result[idx] = cms_update_retrieve(mem, result, *beta, N, W, D, index, value);
 	}
 }
 '''

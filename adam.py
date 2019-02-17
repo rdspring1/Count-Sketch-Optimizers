@@ -50,34 +50,38 @@ class Adam(Optimizer):
     def dense(self, p, grad, group):
         amsgrad = group['amsgrad']
         state = self.state[p]
+        beta1, beta2 = group['betas']
 
         # State initialization
         if len(state) == 0:
             state['step'] = 0
-            # Exponential moving average of gradient values
-            state['exp_avg'] = torch.zeros_like(p.data)
+            if beta1 > 0:
+                # Exponential moving average of gradient values
+                state['exp_avg'] = torch.zeros_like(p.data)
             # Exponential moving average of squared gradient values
             state['exp_avg_sq'] = torch.zeros_like(p.data)
             if amsgrad:
                 # Maintains max of all exp. moving avg. of sq. grad. values
                 state['max_exp_avg_sq'] = torch.zeros_like(p.data)
 
-        exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
-        beta1, beta2 = group['betas']
-        if amsgrad:
-           max_exp_avg_sq = state['max_exp_avg_sq']
-
         state['step'] += 1
         if group['weight_decay'] != 0:
            grad = grad.add(group['weight_decay'], p.data)
 
+        if beta1 > 0:
+            exp_avg = state['exp_avg']
+            exp_avg.mul_(beta1).add_(1 - beta1, grad)
+
+        if amsgrad:
+           max_exp_avg_sq = state['max_exp_avg_sq']
+
         # Decay the first and second moment running average coefficient
-        exp_avg.mul_(beta1).add_(1 - beta1, grad)
+        exp_avg_sq = state['exp_avg_sq']
         exp_avg_sq.mul_(beta2).addcmul_(1 - beta2, grad, grad)
+
         if amsgrad:
             # Maintains the maximum of all 2nd moment running avg. till now
             torch.max(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
-
             # Use the max. for normalizing running avg. of gradient
             denom = max_exp_avg_sq.sqrt().add_(group['eps'])
         else:
@@ -86,17 +90,23 @@ class Adam(Optimizer):
         bias_correction1 = 1 - beta1 ** state['step']
         bias_correction2 = 1 - beta2 ** state['step']
         step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
-        p.data.addcdiv_(-step_size, exp_avg, denom)
+
+        if beta1 > 0:
+            p.data.addcdiv_(-step_size, exp_avg, denom)
+        else:
+            p.data.addcdiv_(-step_size, grad, denom)
 
     def sparse(self, p, grad, group):
         state = self.state[p]
+        beta1, beta2 = group['betas']
 
         # State initialization
         if len(state) == 0:
             N, D = grad.data.size()
             state['step'] = 0
-            # Exponential moving average of gradient values
-            state['exp_avg'] = CountSketch(N, D)
+            if beta1 > 0:
+                # Exponential moving average of gradient values
+                state['exp_avg'] = CountSketch(N, D)
             # Exponential moving average of squared gradient values
             state['exp_avg_sq'] = CountMinSketch(N, D)
 
@@ -115,16 +125,19 @@ class Adam(Optimizer):
                 return constructor().resize_as_(grad)
             return constructor(grad_indices, values, size)
 
-        exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
-        beta1, beta2 = group['betas']
+        if beta1 > 0:
+            exp_avg = state['exp_avg']
+            numer = exp_avg.update(grad_indices, grad_values, size, beta1)._values()
+        else:
+            numer = grad._values()
 
+        exp_avg_sq = state['exp_avg_sq']
         if state['step'] % 1000 == 0:
            #print("Cleaning")
            exp_avg_sq.clean(0.25)
 
         # Decay the first and second moment running average coefficient
         #      old <- b * old + (1 - b) * new  <==> old += (1 - b) * (new - old)
-        numer = exp_avg.update(grad_indices, grad_values, size, beta1)._values()
         exp_avg_sq_update = exp_avg_sq.update(grad_indices, grad_values.pow(2), size, beta2)._values()
         denom = exp_avg_sq_update.sqrt_().add_(group['eps'])
         update = numer / denom
