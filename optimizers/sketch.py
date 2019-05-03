@@ -115,21 +115,13 @@ class CountSketch:
         self.range = int(N*sketch_size/3.)
         self.width = self.range * D
         self.kernel = cupyKernel(kernel, "hash_update_retrieve")
-        self.sketch = torch.zeros(3, self.range, D).float().cuda()
+        self.sketch = torch.cuda.FloatTensor(3, self.range, D).fill_(0)
         print(N, "Count Sketch", self.sketch.size())
-
-    def schedule(self, rate=425000, maximum=0.990):
-        value = 1. + math.log(math.floor(self.t/rate)+1, 2)
-        current = 1. - pow(2.0, -value)
-        self.t += 1
-        if self.t % rate == 0:
-            print("Momentum:", current)
-        return min(current, maximum)
 
     def update(self, indices, values, size, beta):
         M, D = values.size()
-        result = torch.zeros(values.size()).float().cuda()
-        beta = torch.FloatTensor([beta]).cuda()
+        result = torch.cuda.FloatTensor(values.size()).fill_(0)
+        beta = torch.cuda.FloatTensor(1).fill_(beta)
         self.kernel(grid=(M,1,1),
                 block=(self.blk_size,1,1),
                 args=[indices.data_ptr(),

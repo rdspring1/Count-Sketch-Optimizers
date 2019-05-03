@@ -95,7 +95,7 @@ class CountMinSketch:
 
     def update(self, indices, values, size):
         M, D = values.size()
-        result = torch.zeros(values.size()).float().cuda()
+        result = torch.cuda.FloatTensor(values.size()).fill_(0)
         self.kernel(grid=(M,1,1),
                 block=(self.blk_size,1,1),
                 args=[indices.data_ptr(),

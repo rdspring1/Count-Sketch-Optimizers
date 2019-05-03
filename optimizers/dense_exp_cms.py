@@ -84,13 +84,12 @@ class DenseCMS:
         self.blk_size = 32
         self.range = max(int(D*sketch_size), 1)
         self.kernel = cupyKernel(kernel, "dense_cms_update")
-        self.cms = torch.zeros(N, self.range).float().cuda()
+        self.cms = torch.cuda.FloatTensor(N, self.range).fill_(0)
         print(N, "Dense CMS", self.cms.size())
 
     def update(self, p, g, lr, beta):
-        lr = torch.FloatTensor([lr]).cuda()
-        beta = torch.FloatTensor([beta]).cuda()
-
+        lr = torch.cuda.FloatTensor(1).fill_(lr)
+        beta = torch.cuda.FloatTensor(1).fill_(beta)
         # shared memory - #copies x #elements x sizeof(float)
         self.kernel(grid=(self.N,1,1),
                 block=(self.blk_size,1,1),

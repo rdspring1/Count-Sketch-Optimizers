@@ -97,13 +97,13 @@ class CountMinSketch:
         self.range = int(N*sketch_size/3.)
         self.width = self.range * D
         self.kernel = cupyKernel(kernel, "cms_hash_update_retrieve")
-        self.cms = torch.zeros(3, self.range, D).float().cuda()
+        self.cms = torch.cuda.FloatTensor(3, self.range, D).fill_(0)
         print(N, "CMS", self.cms.size())
 
     def update(self, indices, values, size, beta):
         M, D = values.size()
-        result = torch.zeros(values.size()).float().cuda()
-        beta = torch.FloatTensor([beta]).cuda()
+        result = torch.cuda.FloatTensor(values.size()).fill_(0)
+        beta = torch.cuda.FloatTensor(1).fill_(beta)
         self.kernel(grid=(M,1,1),
                 block=(self.blk_size,1,1),
                 args=[indices.data_ptr(),
