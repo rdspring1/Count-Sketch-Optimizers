@@ -91,6 +91,7 @@ net.cuda()
 
 print("Sampled Softmax:", nsampled, "Batch Size:", args.batch_size, "Initial LR:", args.lr)
 #optimizer = Adam(net.parameters(), args.lr, betas=(0.0, 0.999))
+#optimizer = optim.RMSprop(net.parameters(), args.lr)
 optimizer = RMSprop(net.parameters(), args.lr)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=train_corpus.batch_num*args.epochs, eta_min=1e-8)
 net, optimizer = amp.initialize(net, optimizer, opt_level="O1")

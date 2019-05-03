@@ -259,8 +259,9 @@ class TransformerDecoder(nn.Module):
             TransformerDecoderLayer(args)
             for i in range(args.decoder_layers)
         ])
+        self.chkpt_grad = args.chkpt_grad
 
-    def forward(self, prev_output_tokens, encoder_out, incremental_state=None, chkpt_grad=False, **kwargs):
+    def forward(self, prev_output_tokens, encoder_out, incremental_state=None, **kwargs):
         # embed positions
         positions = self.embed_positions(
             prev_output_tokens,
@@ -288,7 +289,7 @@ class TransformerDecoder(nn.Module):
                 return x_
             return custom_forward
 
-        if self.training and chkpt_grad:
+        if self.training and self.chkpt_grad:
             l = 0
             num_layers = len(self.layers)
             chunk_length = math.ceil(math.sqrt(num_layers))

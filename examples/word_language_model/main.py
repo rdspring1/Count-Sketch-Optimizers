@@ -15,6 +15,7 @@ import model
 from sgd import SGD # Count-Sketch Momentum optimizer
 from adagrad import Adagrad # Count-Sketch Adagrad optimizer
 from adam import Adam # Count-Sketch Adam optimizer
+from rmsprop import RMSprop # Count-Sketch RMSProp optimizer
 #from adam_base import Adam # Baseline Adam optimizer supports sparse gradients
 #from adafactor import Adam # Low-Rank Approximation Adam optimzer
 
@@ -106,6 +107,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = SGD(model.parameters(), args.lr, momentum=0.9, nesterov=True)
 #optimizer = Adagrad(model.parameters(), args.lr)
 #optimizer = Adam(model.parameters(), betas=(0.9, 0.999))
+#optimizer = RMSprop(model.parameters())
 
 ###############################################################################
 # Training code

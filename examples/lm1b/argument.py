@@ -49,4 +49,6 @@ def add_transformer_args(parser):
                         help='use learned positional embeddings in the decoder')
     parser.add_argument('--decoder-normalize-before', default=True, action='store_true',
                         help='apply layernorm before each decoder block')
+    parser.add_argument('--chkpt-grad', default=True, action='store_true',
+                        help='checkpoint gradients to allow for training with larger models and sequences')
     return parser
