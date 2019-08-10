@@ -114,11 +114,34 @@ class CountSketch:
         self.blk_size = math.ceil(D // 32) * 32
         self.range = int(N*sketch_size/3.)
         self.width = self.range * D
-        self.kernel = cupyKernel(kernel, "hash_update_retrieve")
-        self.sketch = torch.cuda.FloatTensor(3, self.range, D).fill_(0)
+        device = torch.cuda.current_device()
+        self.sketch = torch.cuda.FloatTensor(3, self.range, D).fill_(0).to(device)
+        self.kernel = None
         print(N, "Count Sketch", self.sketch.size())
 
+    def __getstate__(self):
+        state_dict = dict()
+        state_dict['N'] = self.N
+        state_dict['D'] = self.D
+        state_dict['blk_size'] = self.blk_size
+        state_dict['range'] = self.range
+        state_dict['width'] = self.width
+        state_dict['sketch'] = self.sketch.detach().cpu().numpy()
+        return state_dict
+
+    def __setstate__(self, d):
+        self.__dict__ = d
+        device = torch.cuda.current_device()
+        self.sketch = torch.from_numpy(self.sketch).to(device)
+        self.kernel = None
+
+    def initialize(self):
+        if self.kernel is None:
+            self.kernel = cupyKernel(kernel, "hash_update_retrieve")
+
     def update(self, indices, values, size, beta):
+        self.initialize()
+
         M, D = values.size()
         result = torch.cuda.FloatTensor(values.size()).fill_(0)
         beta = torch.cuda.FloatTensor(1).fill_(beta)

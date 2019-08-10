@@ -75,6 +75,62 @@ void dense_cms_update(float* parameter,
 		atomicAdd(&mem[global_index], global_update);
 	}
 }
+
+extern "C"
+__global__
+void dense_update(float* parameter,
+        float* gradient,
+        float* mem,
+        const float* lr_ptr,
+        const float* beta_ptr,
+        const int N,
+        const int D,
+        const int W)
+{
+        const float lr = *lr_ptr;
+        const float beta = *beta_ptr;
+        const int offset = blockIdx.x * D;
+
+        // Read auxiliary variables
+        extern __shared__ float shared[];
+        float* aux = (float*) &shared[0];
+        float* acc = (float*) &shared[D];
+
+        for(int index = threadIdx.x; index < D; index += blockDim.x)
+        {
+                const int global_index = blockIdx.x * D + index;
+                aux[index] = mem[global_index];
+                acc[index] = 0.0f;
+        }
+        __syncthreads();
+
+        for(int index = threadIdx.x; index < D; index += blockDim.x)
+        {
+                // Read chunk from parameters, gradient
+                float p = parameter[offset + index];
+                float g = gradient[offset + index];
+                float value = powf(g, 2);
+
+                // Calculate auxiliary variable approximation
+                float v = beta * aux[index] + (1. - beta) * value;
+
+                // Perform parameter update
+                float update = lr * g * rsqrtf(v + 1e-10);
+                atomicAdd(&parameter[offset + index], update);
+
+                // Update Accumulate Register
+                acc[index] += value;
+                __syncthreads();
+        }
+
+        // Update Auxiliary variables
+        for(int index = threadIdx.x; index < D; index += blockDim.x)
+        {
+                const float global_update = (1. - beta) * (acc[index] - aux[index]);
+                const int global_index = blockIdx.x * D + index;
+                atomicAdd(&mem[global_index], global_update);
+        }
+}
 '''
 
 class DenseCMS:
@@ -83,11 +139,42 @@ class DenseCMS:
         self.D = D
         self.blk_size = 32
         self.range = max(int(D*sketch_size), 1)
-        self.kernel = cupyKernel(kernel, "dense_cms_update")
-        self.cms = torch.cuda.FloatTensor(N, self.range).fill_(0)
+        device = torch.cuda.current_device()
+        self.cms = torch.FloatTensor(self.N, self.range).fill_(0).to(device)
+        self.kernel = None
         print(N, "Dense CMS", self.cms.size())
 
+    def state_dict(self):
+        return self.__getstate__()
+
+    def load_state_dict(self, d):
+        return self.__setstate__(d)
+
+    def __getstate__(self):
+        state_dict = dict()
+        state_dict['N'] = self.N
+        state_dict['D'] = self.D
+        state_dict['blk_size'] = self.blk_size
+        state_dict['range'] = self.range
+        state_dict['cms'] = self.cms.detach().cpu().numpy()
+        return state_dict
+
+    def __setstate__(self, d):
+        self.__dict__ = d
+        device = torch.cuda.current_device()
+        self.cms = torch.from_numpy(self.cms).to(device)
+        self.kernel = None
+
+    def initialize(self):
+        if self.kernel is None:
+            if self.D == self.range:
+                self.kernel = cupyKernel(kernel, "dense_update")
+            else:
+                self.kernel = cupyKernel(kernel, "dense_cms_update")
+
     def update(self, p, g, lr, beta):
+        self.initialize()
+
         lr = torch.cuda.FloatTensor(1).fill_(lr)
         beta = torch.cuda.FloatTensor(1).fill_(beta)
         # shared memory - #copies x #elements x sizeof(float)
